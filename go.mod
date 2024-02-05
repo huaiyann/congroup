@@ -1,4 +1,4 @@
-module github.com/huaiyann/congroup
+module github.com/huaiyann/congroup/v2
 
 go 1.18
 

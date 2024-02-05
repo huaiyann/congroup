@@ -6,10 +6,10 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/huaiyann/congroup/internal/channel"
-	"github.com/huaiyann/congroup/internal/errs"
-	"github.com/huaiyann/congroup/internal/handlers"
-	"github.com/huaiyann/congroup/internal/panics"
+	"github.com/huaiyann/congroup/v2/internal/channel"
+	"github.com/huaiyann/congroup/v2/internal/errs"
+	"github.com/huaiyann/congroup/v2/internal/handlers"
+	"github.com/huaiyann/congroup/v2/internal/panics"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
