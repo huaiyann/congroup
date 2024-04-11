@@ -12,6 +12,7 @@ import (
 	"github.com/huaiyann/congroup/v2/internal/panics"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Handler func(context.Context) error
@@ -23,18 +24,21 @@ type ConGroup struct {
 	errs       *errs.Errs
 	panics     *panics.Panics
 	c          *channel.Channel[handlers.IHanlerInfo]
-	opt        *Option
+	opt        *NewOpt
+	span       trace.Span
 }
 
-func New(ctx context.Context, opts ...*Option) *ConGroup {
+func New(ctx context.Context, opts ...*NewOpt) *ConGroup {
+	ctx, span := otel.GetTracerProvider().Tracer("congroup").Start(ctx, "congroup|New")
+
 	cg := &ConGroup{
 		ctx:    ctx,
 		errs:   errs.New(),
 		panics: panics.New(),
 		c:      channel.New[handlers.IHanlerInfo](),
-		opt:    new(Option),
+		opt:    NewOption().merge(opts...),
+		span:   span,
 	}
-	cg.opt.merge(opts...)
 
 	for i := uint(0); i < cg.opt.GetMaxConcurrency(); i++ {
 		cg.wg.Add(1)
@@ -44,18 +48,24 @@ func New(ctx context.Context, opts ...*Option) *ConGroup {
 	return cg
 }
 
-func (g *ConGroup) Add(h Handler) {
+func (g *ConGroup) Add(h Handler, opts ...*AddOpt) {
+	opt := AddOption().merge(opts...)
 	pc, file, line, _ := runtime.Caller(1)
 	from := fmt.Sprintf("%s:%d", file, line)
 	if callerFunc := runtime.FuncForPC(pc); callerFunc != nil {
 		from += fmt.Sprintf("(%s)", callerFunc.Name())
 	}
-	g.c.In() <- &handlers.HandlerInfo{H: handlers.Handler(h), From: from}
+	g.c.In() <- &handlers.HandlerInfo{
+		H:     handlers.Handler(h),
+		From:  from,
+		Label: opt.GetLabel(),
+	}
 }
 
 func (g *ConGroup) Wait() error {
 	g.c.Close()
 	g.wg.Wait()
+	g.span.End()
 	if g.panics.Has() {
 		panic(g.panics.Info())
 	}
@@ -93,8 +103,13 @@ func (g *ConGroup) execHandler(h handlers.IHanlerInfo) {
 			g.panics.Add(reason, buf[:length])
 		}
 	}()
+
 	ctx := g.ctx
-	ctx, span := otel.GetTracerProvider().Tracer("congroup").Start(ctx, "congroup|execHandler")
+	name := "congroup|execHandler"
+	if label := h.GetLabel(); label != "" {
+		name += "|" + label
+	}
+	ctx, span := otel.GetTracerProvider().Tracer("congroup").Start(ctx, name)
 	span.SetAttributes(attribute.String("added from", h.GetFrom()))
 	defer span.End()
 
